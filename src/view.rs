@@ -1143,7 +1143,14 @@ fn home(out: &mut Scene, state: &State, assets: &Assets, now: OffsetDateTime) {
         );
     }
     out.text(
-        format!("Clear TV · {}", language.t("favorites")),
+        "CLEAR TV",
+        Rect::new(84., top - 34., 420., 22.),
+        text(14.4, 650, 0.12),
+        c(0xf5f5f5, 0.58),
+        false,
+    );
+    out.text(
+        language.t("favorites"),
         Rect::new(84., 478.5 - s, 1000., 31.),
         text(23.2, 550, -0.035).leading(1.3),
         WHITE,
