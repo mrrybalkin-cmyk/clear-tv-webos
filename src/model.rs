@@ -229,8 +229,16 @@ impl DateFormat {
 pub struct Preferences {
     pub favorites: Option<Vec<String>>,
     pub custom_tiles: Vec<CustomTile>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        deserialize_with = "read_quick_actions",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub quick_actions: Vec<QuickAction>,
+    #[serde(default, deserialize_with = "read_smart_actions")]
+    pub smart_actions: Vec<crate::smart_actions::SmartAction>,
+    #[serde(default, deserialize_with = "read_automations")]
+    pub automations: Vec<crate::automation::Automation>,
     pub hidden: Vec<String>,
     pub background: String,
     /// Last manually chosen splash, independent of automatic rotation.
@@ -273,6 +281,8 @@ impl Default for Preferences {
             favorites: None,
             custom_tiles: vec![],
             quick_actions: vec![],
+            smart_actions: vec![],
+            automations: vec![],
             hidden: vec![],
             background: "dunes".into(),
             splash_background: None,
@@ -391,6 +401,8 @@ impl Preferences {
     }
 
     pub fn sanitize(&mut self) {
+        crate::smart_actions::sanitize(&mut self.smart_actions);
+        crate::automation::sanitize(&mut self.automations);
         if self.splash_background.as_ref().is_some_and(|id| {
             !BACKGROUNDS.iter().any(|(known, _)| *known == id) && !crate::wallpapers::valid_id(id)
         }) {
@@ -632,4 +644,36 @@ pub fn demo_inventory() -> Inventory {
         }
     }
     inventory
+}
+
+// A damaged management entry must not discard unrelated launcher preferences.
+fn read_bounded<'de, D: serde::Deserializer<'de>, T: serde::de::DeserializeOwned>(
+    d: D,
+    limit: usize,
+) -> Result<Vec<T>, D::Error> {
+    let value = serde_json::Value::deserialize(d)?;
+    Ok(value
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .take(limit)
+                .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                .collect()
+        })
+        .unwrap_or_default())
+}
+fn read_quick_actions<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Vec<QuickAction>, D::Error> {
+    read_bounded(d, QUICK_ACTION_LIMIT)
+}
+fn read_smart_actions<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Vec<crate::smart_actions::SmartAction>, D::Error> {
+    read_bounded(d, crate::smart_actions::ACTION_LIMIT)
+}
+fn read_automations<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Vec<crate::automation::Automation>, D::Error> {
+    read_bounded(d, crate::automation::LIMIT)
 }

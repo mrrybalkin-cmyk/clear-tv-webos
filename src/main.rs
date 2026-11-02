@@ -15,7 +15,11 @@ mod i18n;
 mod input_refresh;
 #[cfg(all(feature = "webos", target_os = "linux", target_arch = "arm"))]
 mod luna;
+mod automation;
 mod model;
+mod recovery;
+mod smart_actions;
+mod system_diagnostics;
 mod platform;
 mod raster;
 mod recents;
