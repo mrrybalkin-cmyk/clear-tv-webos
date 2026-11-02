@@ -15,8 +15,10 @@ pub mod discovery {
         Failed,
     }
 
-    pub fn public_checks_enabled(scripted: bool, simulated: bool) -> bool {
-        !scripted && !simulated
+    pub fn public_checks_enabled(_scripted: bool, _simulated: bool) -> bool {
+        // Clear TV keeps Luma's app ID: public upstream updates would replace this fork.
+        // Disable both discovery and installation until a Clear TV channel is ready.
+        false
     }
 
     pub struct Service {
@@ -155,8 +157,8 @@ pub mod discovery {
     mod tests {
         use super::*;
         #[test]
-        fn interactive_checks_are_live_but_scripts_and_simulations_stay_offline() {
-            assert!(public_checks_enabled(false, false));
+        fn clear_tv_disables_public_updates_in_every_mode() {
+            assert!(!public_checks_enabled(false, false));
             assert!(!public_checks_enabled(true, false));
             assert!(!public_checks_enabled(false, true));
             assert!(!public_checks_enabled(true, true));
@@ -212,15 +214,18 @@ pub mod discovery {
         }
         #[test]
         fn disabled_service_never_contacts_the_network() {
-            let service = Service::new(false);
-            assert!(service.receiver.try_recv().is_err());
+            let service = Service::new(public_checks_enabled(false, false));
+            assert!(matches!(
+                service.receiver.recv_timeout(Duration::from_millis(50)),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            ));
             service.check();
-            assert!(
+            assert_eq!(
                 service
                     .receiver
                     .recv_timeout(Duration::from_secs(2))
-                    .unwrap()
-                    .is_err()
+                    .unwrap(),
+                Err("Public release checks are disabled for scripted/simulated previews".into())
             );
         }
         #[test]
@@ -632,16 +637,25 @@ mod tests {
 
     #[test]
     fn disabled_installer_rejects_downloads_without_network_or_platform_calls() {
-        let worker = Worker::new(false);
-        assert!(worker.receiver.try_recv().is_err());
-        worker.request(Request::Download("99.0.0".into()));
+        let worker = Worker::new(public_checks_enabled(false, false));
         assert!(matches!(
-            worker
-                .receiver
-                .recv_timeout(Duration::from_secs(2))
-                .unwrap(),
-            Response::Finished(Err(_))
+            worker.receiver.recv_timeout(Duration::from_millis(50)),
+            Err(mpsc::RecvTimeoutError::Timeout)
         ));
+        worker.request(Request::Download("99.0.0".into()));
+        match worker
+            .receiver
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+        {
+            Response::Finished(Err(error)) => {
+                assert_eq!(
+                    error,
+                    "Installation is only available in interactive TV runs"
+                );
+            }
+            _ => panic!("Disabled policy must reject installation before downloading or handoff"),
+        }
     }
 
     #[test]
