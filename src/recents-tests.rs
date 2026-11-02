@@ -303,18 +303,39 @@ fn a_short_back_on_home_opens_recents_and_the_next_press_restores_the_app() {
 }
 
 #[test]
-fn home_header_has_only_navigation_and_tv_settings() {
+fn home_header_has_navigation_service_and_tv_settings() {
     let state = ready();
     let header: Vec<_> = controls(&state)
         .into_iter()
         .filter(|control| control.rect.y < 120.)
         .collect();
-    assert_eq!(header.len(), 4);
+    assert_eq!(header.len(), 5);
+    assert!(header.iter().all(|control| matches!(
+        control.target,
+        Target::Nav(_) | Target::OpenService | Target::TvSettings
+    )));
     assert!(
         header
             .iter()
-            .all(|control| matches!(control.target, Target::Nav(_) | Target::TvSettings))
+            .any(|control| control.target == Target::OpenService)
     );
+}
+
+#[test]
+fn service_refresh_closes_panel_and_requests_reload() {
+    let mut state = ready();
+    state.focus = Target::OpenService;
+
+    assert!(state.activate().is_empty());
+    assert!(matches!(state.overlay, Some(Overlay::Service { .. })));
+    assert_eq!(state.focus, Target::ServiceRefresh);
+
+    assert_eq!(
+        state.activate(),
+        vec![Effect::Reload, Effect::RefreshInputs]
+    );
+    assert!(state.overlay.is_none());
+    assert_eq!(state.focus, Target::OpenService);
 }
 
 #[test]

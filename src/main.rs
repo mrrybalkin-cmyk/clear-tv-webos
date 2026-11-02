@@ -319,6 +319,9 @@ fn effects(
                     platform.send(Request::Refresh);
                 }
             }
+            Effect::RefreshInputs => {
+                platform.send(Request::RefreshInputs);
+            }
             Effect::Launch(id) => {
                 if scroll_preview::is_placeholder(&id) {
                     state.notify(state.preferences.language.t("scrollTestOnly"));

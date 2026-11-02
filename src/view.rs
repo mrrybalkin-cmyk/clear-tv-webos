@@ -599,6 +599,7 @@ pub fn scene_with_pill(
         | Overlay::Delete { .. }
         | Overlay::BackgroundOptions { .. }
         | Overlay::BackgroundDelete { .. }
+        | Overlay::Service { .. }
         | Overlay::Keyboard
         | Overlay::WallpaperUpload
         | Overlay::TileEditor),
@@ -649,6 +650,7 @@ pub fn scene_with_pill(
             Overlay::Delete { id, .. } | Overlay::BackgroundDelete { id, .. } => {
                 delete_confirmation(&mut out, state, assets, id)
             }
+            Overlay::Service { .. } => service_panel(&mut out, state, assets),
             Overlay::Keyboard => keyboard(&mut out, state, assets),
             Overlay::WallpaperUpload => wallpaper_upload(&mut out, state, assets),
             Overlay::TileEditor => tile_editor(&mut out, state, assets),
@@ -752,6 +754,31 @@ fn header(
         out.control(Target::Nav(index), rect, false);
     }
     let button_size = 60.;
+    let service = Rect::new(1594., nav.y + (nav.h - button_size) / 2., 166., button_size);
+    let service_focused = state.focus == Target::OpenService;
+    out.pill(service, service_focused, false);
+    out.icon(
+        assets,
+        "settings",
+        Rect::new(service.x + 18., service.y + 19., 22., 22.),
+        if service_focused {
+            c(0x2c2c2c, 1.)
+        } else {
+            c(0xeeeeee, 0.73)
+        },
+    );
+    out.text(
+        language.t("service"),
+        Rect::new(service.x + 50., service.y + 18., service.w - 62., 25.),
+        text(18.4, 550, -0.02),
+        if service_focused {
+            c(0x2c2c2c, 1.)
+        } else {
+            c(0xeeeeee, 0.73)
+        },
+        false,
+    );
+    out.control(Target::OpenService, service, false);
     let rect = Rect::new(
         1836. - button_size,
         nav.y + (nav.h - button_size) / 2.,
@@ -776,6 +803,92 @@ fn header(
         },
     );
     out.control(Target::TvSettings, rect, false);
+}
+
+fn service_panel(out: &mut Scene, state: &State, assets: &Assets) {
+    let language = state.preferences.language;
+    let panel = Rect::new(560., 300., 800., 420.);
+
+    out.shadow(panel, 28., 36., 14., 0.34);
+    out.shape(panel, 28., c(0x171c20, 0.97));
+    out.border(panel, 28., 1., c(0xffffff, 0.12));
+
+    out.text(
+        language.t("service"),
+        Rect::new(panel.x + 48., panel.y + 42., panel.w - 96., 44.),
+        text(31., 600, -0.025),
+        WHITE,
+        false,
+    );
+
+    let status = format!(
+        "Clear TV {}   ·   {}: {}   ·   {}: {}",
+        env!("CARGO_PKG_VERSION"),
+        language.t("serviceApps"),
+        state.inventory.apps.len(),
+        language.t("serviceInputs"),
+        state.inventory.inputs.len(),
+    );
+    out.text(
+        &status,
+        Rect::new(panel.x + 48., panel.y + 106., panel.w - 96., 32.),
+        text(17.2, 450, 0.),
+        c(0xeeeeee, 0.68),
+        false,
+    );
+
+    service_action(
+        out,
+        state,
+        assets,
+        Target::ServiceRefresh,
+        Rect::new(panel.x + 48., panel.y + 184., panel.w - 96., 70.),
+        "refresh",
+        language.t("refreshHome"),
+    );
+    service_action(
+        out,
+        state,
+        assets,
+        Target::ServiceSettings,
+        Rect::new(panel.x + 48., panel.y + 276., panel.w - 96., 70.),
+        "settings",
+        language.t("settings"),
+    );
+}
+
+fn service_action(
+    out: &mut Scene,
+    state: &State,
+    assets: &Assets,
+    target: Target,
+    rect: Rect,
+    icon: &str,
+    label: &str,
+) {
+    let focused = state.focus == target;
+    out.pill(rect, focused, false);
+
+    let color = if focused {
+        c(0x242424, 1.)
+    } else {
+        c(0xeeeeee, 0.82)
+    };
+
+    out.icon(
+        assets,
+        icon,
+        Rect::new(rect.x + 24., rect.y + 23., 24., 24.),
+        color,
+    );
+    out.text(
+        label,
+        Rect::new(rect.x + 68., rect.y + 21., rect.w - 92., 30.),
+        text(21., 550, -0.015),
+        color,
+        false,
+    );
+    out.control(target, rect, false);
 }
 
 fn tile(

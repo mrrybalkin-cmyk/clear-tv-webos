@@ -46,6 +46,9 @@ pub enum Page {
 pub enum Target {
     Nav(usize),
     TvSettings,
+    OpenService,
+    ServiceRefresh,
+    ServiceSettings,
     InstallUpdate,
     CheckUpdates,
     Recent(String),
@@ -136,6 +139,7 @@ pub enum Overlay {
     Options { id: String, restore: Target },
     Delete { id: String, restore: Target },
     Recents { restore: Target },
+    Service { restore: Target },
     Keyboard,
     SystemKeyboard,
     WallpaperUpload,
@@ -186,6 +190,7 @@ pub enum Effect {
     Refresh,
     /// Refresh apps: read the inventory and every app icon again.
     Reload,
+    RefreshInputs,
     Launch(String),
     Uninstall(String),
     DeleteWallpaper(String),
@@ -1959,6 +1964,31 @@ impl State {
                 self.pressed = None;
             }
             Target::TvSettings => return vec![Effect::Launch("com.palm.app.settings".into())],
+            Target::OpenService => {
+                if self.overlay.is_none() {
+                    let restore = self.focus.clone();
+                    self.overlay = Some(Overlay::Service { restore });
+                    self.focus = Target::ServiceRefresh;
+                    if !self.preferences.reduced_motion {
+                        self.panel_started = Some(Instant::now());
+                    }
+                }
+                return vec![];
+            }
+            Target::ServiceRefresh => {
+                if let Some(Overlay::Service { restore }) = self.overlay.take() {
+                    self.focus = restore;
+                }
+                self.panel_started = None;
+                return vec![Effect::Reload, Effect::RefreshInputs];
+            }
+            Target::ServiceSettings => {
+                if let Some(Overlay::Service { restore }) = self.overlay.take() {
+                    self.focus = restore;
+                }
+                self.panel_started = None;
+                return vec![Effect::Launch("com.palm.app.settings".into())];
+            }
             Target::App(_) if self.page == Page::Apps && !self.launching => self.options(),
             Target::App(id) | Target::Input(id) if !self.launching => {
                 return vec![Effect::Launch(id)];
@@ -2490,6 +2520,11 @@ impl State {
             if let Overlay::Delete { id, restore } = overlay {
                 self.overlay = Some(Overlay::Options { id, restore });
                 self.focus = Target::Option(2);
+                self.pressed = None;
+                return vec![];
+            }
+            if let Overlay::Service { restore } = overlay {
+                self.focus = restore;
                 self.pressed = None;
                 return vec![];
             }
