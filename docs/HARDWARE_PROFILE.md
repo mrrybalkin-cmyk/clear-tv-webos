@@ -35,3 +35,28 @@ The exact OLED42C6RLA model was validated manually.
 Do not generalize this result to other LG models.
 
 Each additional television model requires its own hardware validation.
+
+## Clear TV hardware validation
+
+Date: 2026-11-02
+
+Branch: feat/clear-tv-branding
+
+Result: PASS
+
+Validated on OLED42C6RLA:
+
+- custom Clear TV IPK installed successfully
+- Clear TV branding rendered correctly
+- application inventory works
+- HDMI inputs work
+- remote arrows work
+- OK works
+- Back works
+- Home takeover works
+- HDMI to Home works
+- cold boot restores Clear TV Home
+- SSH recovery remains available
+- stock Luma backup verified by SHA-256
+
+Rollback remains available through the saved stock backup and `home.sh disable`.
