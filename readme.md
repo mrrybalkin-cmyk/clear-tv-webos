@@ -4,6 +4,12 @@ A native launcher for rooted LG webOS TVs, inspired by Apple TV.
 
 https://github.com/user-attachments/assets/3d3564d9-5942-4aef-a726-0323f5e86a07
 
+Clear TV fork: standalone operation on stock LG Home, Quick Actions, bounded Smart Actions,
+small event automation and separate Service diagnostics/recovery. See
+[platform architecture](docs/SYSTEM_ARCHITECTURE.md) and [hardware validation procedure](docs/TV_RUNBOOK.md).
+The new Actions/System capabilities require physical hardware validation; upstream public updates
+remain disabled.
+
 <details>
 <summary>Screenshots</summary>
 

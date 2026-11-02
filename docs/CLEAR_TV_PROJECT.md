@@ -2,7 +2,7 @@
 
 ## Objective
 
-Build a clean custom Home experience for rooted LG webOS televisions.
+Build a standalone launcher, actions and controlled system-management platform for rooted LG webOS televisions.
 
 The project uses `ecklf/lg-luma` as its technical base.
 
@@ -42,38 +42,20 @@ Keep the upstream native architecture:
 
 Do not replace the launcher with React or a browser application.
 
-The product architecture has two logical layers.
+The implemented product has three logical levels:
 
-### Launcher layer
+- **Launcher:** Apps, Inputs, Recents and Favorites, retaining the Luma native UI.
+- **Actions:** Quick Actions, bounded sequential Smart Actions and deterministic Automation.
+- **System:** Diagnostics, existing safe Update mechanism, controlled Recovery and allowlisted Root Tools.
 
-Based directly on Luma.
+Home remains the launcher. Configuration is under Settings → Actions; system pages open through
+Service. Standalone operation on stock LG Home remains the recommended mode. Public upstream
+update checks remain disabled; no public Luma feed is connected.
 
-Responsibilities:
-
-- Home interface
-- installed applications
-- HDMI inputs
-- navigation
-- favorites
-- recent applications
-- settings
-- visual customization
-
-### Management layer
-
-Add this separately.
-
-Responsibilities:
-
-- diagnostics
-- update verification
-- SHA-256 verification
-- rollback
-- health checks
-- watchdog
-- safe deployment
-
-Do not couple management logic tightly to rendering code.
+See [System architecture](SYSTEM_ARCHITECTURE.md), [Smart Actions](SMART_ACTIONS.md) and
+[Automation](AUTOMATION.md) for implemented behavior and explicitly deferred capabilities.
+New platform features have local unit/render/package validation only until the runbook is
+completed on physical hardware. Earlier hardware results below apply to their recorded baseline.
 
 ## Safety rules
 

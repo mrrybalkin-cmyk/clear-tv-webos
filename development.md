@@ -23,6 +23,19 @@ is the Rust executable `luma`, with app ID `com.ecklf.luma`. The companion pages
 native executable and served temporarily to the owner's phone or computer; they do not render the
 TV interface.
 
+## Clear TV platform modules
+
+Smart Action models/executor live in `src/smart_actions.rs`; event matching and cooldown in
+`src/automation.rs`; remote management interaction in `src/management.rs` and page descriptors in
+`src/management_view.rs`. System observations and allowlisted recovery types are separate from
+launcher inventory. See [system architecture](docs/SYSTEM_ARCHITECTURE.md).
+
+`pnpm test:management` renders isolated create/name/step/save/reload and diagnostics scenarios.
+It is also included in `pnpm test:smoke`. Linux needs a working GL/EGL software or hardware driver;
+Xvfb alone does not supply missing dynamically loaded GL libraries. No desktop scenario calls a TV.
+The scripted `await-idle` barrier waits for actual animation completion before a frame-budget
+exit, allowing empty Recents snapshots to settle without sleeps or changing launcher animation.
+
 ## Toolchain and commands
 
 ```sh

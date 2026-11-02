@@ -12,22 +12,22 @@ Firmware: 43.21.79
 
 ## Validation status
 
-| Capability | Status |
-|---|---|
-| Root access | PASS |
-| Root after reboot | PASS |
-| SSH key authentication | PASS |
-| Homebrew Channel | PASS |
-| Luma installation | PASS |
-| Native Luma rendering | PASS |
-| Application inventory | PASS |
-| HDMI inputs | PASS |
-| Remote arrows | PASS |
-| Remote OK | PASS |
-| Remote Back | PASS |
-| Autostart | PASS |
-| Home takeover capability | PASS |
-| Standalone app mode | PASS |
+| Capability               | Status |
+| ------------------------ | ------ |
+| Root access              | PASS   |
+| Root after reboot        | PASS   |
+| SSH key authentication   | PASS   |
+| Homebrew Channel         | PASS   |
+| Luma installation        | PASS   |
+| Native Luma rendering    | PASS   |
+| Application inventory    | PASS   |
+| HDMI inputs              | PASS   |
+| Remote arrows            | PASS   |
+| Remote OK                | PASS   |
+| Remote Back              | PASS   |
+| Autostart                | PASS   |
+| Home takeover capability | PASS   |
+| Standalone app mode      | PASS   |
 
 ## Notes
 
@@ -83,3 +83,14 @@ A Magic Remote pairing loss occurred during testing.
 Remote operation was restored by re-registering the Magic Remote.
 
 No evidence currently links the pairing loss to Quick Actions.
+
+## Actions/System MVP hardware gate (not yet performed)
+
+The Smart Actions executor, input-transition/Startup/Manual automation, Diagnostics, Recovery UI
+and HomeStatus Root Tool added after the recorded baseline have **not** been physically tested.
+Local native renders, unit tests and ARM IPK verification cannot change this status.
+
+Use the exact [OLED42C6RLA procedure](TV_RUNBOOK.md#actionssystem-mvp-verification-on-oled42c6rla).
+Retain standalone mode and stock LG Home throughout. Do not infer that input events are delivered
+while Clear TV is hidden or terminated. New management labels are currently English; existing
+launcher localization remains unchanged.
