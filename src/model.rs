@@ -147,6 +147,18 @@ impl CustomTile {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
+#[serde(tag = "kind", content = "id", rename_all = "snake_case")]
+pub enum QuickAction {
+    App(String),
+    Input(String),
+    CustomTile(String),
+    RefreshHome,
+    SystemSettings,
+}
+
+pub const QUICK_ACTION_LIMIT: usize = 8;
+
 /// Interface icons a shortcut tile can show, with their message keys.
 pub const TILE_ICONS: [(&str, &str); 15] = [
     ("weather-moon", "iconMoon"),
@@ -217,6 +229,8 @@ impl DateFormat {
 pub struct Preferences {
     pub favorites: Option<Vec<String>>,
     pub custom_tiles: Vec<CustomTile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub quick_actions: Vec<QuickAction>,
     pub hidden: Vec<String>,
     pub background: String,
     /// Last manually chosen splash, independent of automatic rotation.
@@ -258,6 +272,7 @@ impl Default for Preferences {
         Self {
             favorites: None,
             custom_tiles: vec![],
+            quick_actions: vec![],
             hidden: vec![],
             background: "dunes".into(),
             splash_background: None,
@@ -418,6 +433,20 @@ impl Preferences {
                     && seen.insert(tile.id.clone())
             });
             self.custom_tiles.truncate(TILE_LIMIT);
+        }
+        {
+            let mut seen = HashSet::new();
+            self.quick_actions.retain(|action| {
+                let valid = match action {
+                    QuickAction::App(id) | QuickAction::Input(id) => valid_app_id(id),
+                    QuickAction::CustomTile(id) => {
+                        valid_app_id(id) && id.starts_with(CUSTOM_TILE_PREFIX)
+                    }
+                    QuickAction::RefreshHome | QuickAction::SystemSettings => true,
+                };
+                valid && seen.insert(action.clone())
+            });
+            self.quick_actions.truncate(QUICK_ACTION_LIMIT);
         }
         self.input_modes.retain(|id, _| valid_app_id(id));
         self.input_names = std::mem::take(&mut self.input_names)

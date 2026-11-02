@@ -974,6 +974,36 @@
     "nl": "Systeem",
     "sv": "System"
   },
+  "reordering": {
+    "zh-tw": "重新排序",
+    "en": "Reordering",
+    "de": "Neu anordnen",
+    "es": "Reordenando",
+    "zh": "重新排序",
+    "pt": "Reordenando",
+    "it": "Riordinamento",
+    "ru": "Перемещение",
+    "pl": "Zmiana kolejności",
+    "fr": "Réorganisation",
+    "vi": "Đang sắp xếp",
+    "nl": "Herschikken",
+    "sv": "Ändrar ordning"
+  },
+  "quickActions": {
+    "zh-tw": "快速操作",
+    "en": "Quick actions",
+    "de": "Schnellaktionen",
+    "es": "Acciones rápidas",
+    "zh": "快捷操作",
+    "pt": "Ações rápidas",
+    "it": "Azioni rapide",
+    "ru": "Быстрые действия",
+    "pl": "Szybkie działania",
+    "fr": "Actions rapides",
+    "vi": "Thao tác nhanh",
+    "nl": "Snelle acties",
+    "sv": "Snabbåtgärder"
+  },
   "favorites": {
     "zh-tw": "我的最愛",
     "en": "Favorites",

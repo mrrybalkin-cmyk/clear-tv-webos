@@ -1,7 +1,7 @@
 use crate::i18n::Language;
 use crate::model::{
     App, BACKGROUNDS, CATEGORIES, CUSTOM_TILE_PREFIX, CustomTile, INPUT_NAME_LIMIT, InputMode,
-    Inventory, Preferences, clean_input_name,
+    Inventory, Preferences, QUICK_ACTION_LIMIT, QuickAction, clean_input_name,
 };
 use crate::text_rendering::TextRendering;
 use crate::weather::{self, Unit};
@@ -49,6 +49,8 @@ pub enum Target {
     OpenService,
     ServiceRefresh,
     ServiceSettings,
+    QuickAction(usize),
+    QuickActionToggle(usize),
     InstallUpdate,
     CheckUpdates,
     Recent(String),
@@ -156,6 +158,7 @@ pub enum Subpage {
     DateFormat,
     Weather,
     Shortcuts,
+    QuickActions,
     Inputs,
     Clock,
     ClockFormat,
@@ -224,6 +227,7 @@ pub struct State {
     pub home_scroll: f32,
     pub overlay: Option<Overlay>,
     pub moving: Option<String>,
+    pub moving_quick_action: Option<QuickAction>,
     pub loading: bool,
     /// Set by Refresh apps: the next inventory also reloads every app icon.
     pub reload_artwork: bool,
@@ -270,6 +274,7 @@ impl State {
             home_scroll: 0.,
             overlay: None,
             moving: None,
+            moving_quick_action: None,
             loading: false,
             reload_artwork: false,
             launching: false,
@@ -470,6 +475,7 @@ impl State {
         self.filter = 0;
         self.overlay = None;
         self.moving = None;
+        self.moving_quick_action = None;
         self.subpage = None;
         self.panel_started = None;
         self.dirty = true;
@@ -1003,6 +1009,7 @@ impl State {
             }
             Some(Subpage::Weather) => Target::Widget(1),
             Some(Subpage::Shortcuts) => Target::Widget(2),
+            Some(Subpage::QuickActions) => Target::Widget(5),
             Some(Subpage::Inputs) => Target::Widget(3),
             Some(Subpage::Clock) => Target::Setting(1),
             Some(Subpage::ClockFormat) => {
@@ -1049,6 +1056,43 @@ impl State {
         ) {
             return vec![];
         }
+        if let Some(action) = self.moving_quick_action.clone() {
+            let Some(index) = self
+                .preferences
+                .quick_actions
+                .iter()
+                .position(|saved| saved == &action)
+            else {
+                self.moving_quick_action = None;
+                return vec![];
+            };
+
+            let next = match direction {
+                Direction::Up => index.saturating_sub(1),
+                Direction::Down => {
+                    (index + 1).min(self.preferences.quick_actions.len().saturating_sub(1))
+                }
+                _ => index,
+            };
+
+            if next != index {
+                self.preferences.quick_actions.swap(index, next);
+
+                if let Some(candidate) = self
+                    .quick_action_candidates()
+                    .iter()
+                    .position(|candidate| candidate == &action)
+                {
+                    self.focus(Target::QuickActionToggle(candidate), controls);
+                }
+
+                self.dirty = true;
+                return vec![Effect::Save];
+            }
+
+            return vec![];
+        }
+
         if let Some(id) = self.moving.clone() {
             let mut ids = self.preferences.favorites(&self.inventory.apps);
             let slots: Vec<_> = ids
@@ -1097,16 +1141,31 @@ impl State {
                                 .iter()
                                 .find(|control| control.target == self.focus)
                                 .map_or(960., |control| control.rect.center().0);
+                            let has_quick_actions = controls
+                                .iter()
+                                .any(|control| matches!(control.target, Target::QuickAction(_)));
+
                             let top = controls
                                 .iter()
-                                .filter(|control| matches!(control.target, Target::Input(_)))
+                                .filter(|control| {
+                                    if has_quick_actions {
+                                        matches!(control.target, Target::QuickAction(_))
+                                    } else {
+                                        matches!(control.target, Target::Input(_))
+                                    }
+                                })
                                 .map(|control| control.rect.y)
                                 .fold(f32::INFINITY, f32::min);
+
                             let next = controls
                                 .iter()
                                 .filter(|control| {
-                                    matches!(control.target, Target::Input(_))
-                                        && (control.rect.y - top).abs() < 1.
+                                    let correct_kind = if has_quick_actions {
+                                        matches!(control.target, Target::QuickAction(_))
+                                    } else {
+                                        matches!(control.target, Target::Input(_))
+                                    };
+                                    correct_kind && (control.rect.y - top).abs() < 1.
                                 })
                                 .min_by(|a, b| {
                                     (a.rect.center().0 - x)
@@ -1251,6 +1310,7 @@ impl State {
                     | Target::WeatherToggle
                     | Target::WeatherLocation
                     | Target::WeatherTemperature
+                    | Target::QuickActionToggle(_)
                     | Target::Widget(_)
             ) || (self.focus == Target::Setting(3) && self.subpage == Some(Subpage::Inputs)))
                 && matches!(direction, Direction::Left)
@@ -1655,6 +1715,21 @@ impl State {
     }
 
     pub fn hold(&mut self) {
+        if self.page == Page::Settings
+            && self.subpage == Some(Subpage::QuickActions)
+            && self.overlay.is_none()
+        {
+            if let Target::QuickActionToggle(index) = self.focus
+                && let Some(action) = self.quick_action_candidates().get(index).cloned()
+                && self.preferences.quick_actions.contains(&action)
+            {
+                self.moving_quick_action = Some(action);
+                self.notice = None;
+                self.dirty = true;
+            }
+            return;
+        }
+
         if self.page == Page::Home && self.overlay.is_none() {
             if let Target::App(id) = &self.focus {
                 self.moving = Some(id.clone());
@@ -1923,6 +1998,34 @@ impl State {
         }
     }
 
+    pub fn quick_action_candidates(&self) -> Vec<QuickAction> {
+        let mut actions = vec![QuickAction::RefreshHome, QuickAction::SystemSettings];
+
+        actions.extend(
+            self.inventory
+                .inputs
+                .iter()
+                .map(|input| QuickAction::Input(input.id.clone())),
+        );
+
+        actions.extend(
+            self.inventory
+                .apps
+                .iter()
+                .filter(|app| !app.id.starts_with(CUSTOM_TILE_PREFIX))
+                .map(|app| QuickAction::App(app.id.clone())),
+        );
+
+        actions.extend(
+            self.preferences
+                .custom_tiles
+                .iter()
+                .map(|tile| QuickAction::CustomTile(tile.id.clone())),
+        );
+
+        actions
+    }
+
     pub fn activate(&mut self) -> Vec<Effect> {
         if self.recents_open() {
             use crate::recents::Command;
@@ -1931,6 +2034,10 @@ impl State {
                 Target::RecentRetry => self.recent_request(Command::List),
                 _ => vec![],
             };
+        }
+        if self.moving_quick_action.take().is_some() {
+            self.dirty = true;
+            return vec![];
         }
         if self.moving.take().is_some() {
             // Order was saved at every move. A fresh OK release finishes the
@@ -1988,6 +2095,55 @@ impl State {
                 }
                 self.panel_started = None;
                 return vec![Effect::Launch("com.palm.app.settings".into())];
+            }
+            Target::QuickActionToggle(index) => {
+                let Some(action) = self.quick_action_candidates().get(index).cloned() else {
+                    return vec![];
+                };
+
+                if let Some(position) = self
+                    .preferences
+                    .quick_actions
+                    .iter()
+                    .position(|saved| saved == &action)
+                {
+                    self.preferences.quick_actions.remove(position);
+                } else if self.preferences.quick_actions.len() < QUICK_ACTION_LIMIT {
+                    self.preferences.quick_actions.push(action);
+                }
+
+                return vec![Effect::Save];
+            }
+            Target::QuickAction(index) => {
+                let Some(action) = self.preferences.quick_actions.get(index).cloned() else {
+                    return vec![];
+                };
+                return match action {
+                    QuickAction::App(id) => {
+                        if self.inventory.apps.iter().any(|app| app.id == id) {
+                            vec![Effect::Launch(id)]
+                        } else {
+                            vec![]
+                        }
+                    }
+                    QuickAction::Input(id) => {
+                        if self.inventory.inputs.iter().any(|input| input.id == id) {
+                            vec![Effect::Launch(id)]
+                        } else {
+                            vec![]
+                        }
+                    }
+                    QuickAction::CustomTile(id) => self
+                        .preferences
+                        .custom_tile(&id)
+                        .cloned()
+                        .map(|tile| self.send_tile(tile))
+                        .unwrap_or_default(),
+                    QuickAction::RefreshHome => vec![Effect::Reload, Effect::RefreshInputs],
+                    QuickAction::SystemSettings => {
+                        vec![Effect::Launch("com.palm.app.settings".into())]
+                    }
+                };
             }
             Target::App(_) if self.page == Page::Apps && !self.launching => self.options(),
             Target::App(id) | Target::Input(id) if !self.launching => {
@@ -2098,6 +2254,7 @@ impl State {
                     1 => (Subpage::Weather, Target::WeatherToggle),
                     2 => (Subpage::Shortcuts, Target::TileEditor),
                     4 => (Subpage::Date, Target::DateToggle),
+                    5 => (Subpage::QuickActions, Target::QuickActionToggle(0)),
                     3 => (
                         Subpage::Inputs,
                         self.inventory
@@ -2344,6 +2501,7 @@ impl State {
                         | Subpage::Clock
                         | Subpage::Weather
                         | Subpage::Shortcuts
+                        | Subpage::QuickActions
                         | Subpage::Inputs,
                     ) => {
                         return vec![];
@@ -2489,6 +2647,9 @@ impl State {
     pub fn back(&mut self) -> Vec<Effect> {
         self.pointer = false;
         self.dirty = true;
+        if self.moving_quick_action.take().is_some() {
+            return vec![];
+        }
         if self.moving.take().is_some() {
             return vec![];
         }

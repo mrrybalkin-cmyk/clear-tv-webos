@@ -1,7 +1,7 @@
 //! Screen geometry and styling mirror the web UI's 1920×1080 / 16px-rem layout.
 use crate::{
     i18n::Language,
-    model::{App, BACKGROUNDS, CATEGORIES, Input, InputMode},
+    model::{App, BACKGROUNDS, CATEGORIES, Input, InputMode, QuickAction},
     renderer::{Color, Draw, TextStyle, WHITE},
     state::{
         APPS_COLUMNS, Control, HOME_FADE_LEFT, HOME_FADE_RIGHT, HOME_STRIP_LEFT, HOME_STRIP_RIGHT,
@@ -1363,7 +1363,38 @@ fn home(out: &mut Scene, state: &State, assets: &Assets, now: OffsetDateTime) {
     }
     out.draw.push(Draw::EdgeFadeX(None));
     out.draw.push(Draw::Clip(Some(state.content_viewport())));
-    let input_y = 544.8 + grid_height + 41.6 - s;
+    let mut input_y = 544.8 + grid_height + 41.6 - s;
+
+    if !state.preferences.quick_actions.is_empty() {
+        out.text(
+            language.t("quickActions"),
+            Rect::new(84., input_y + 3.3, 1000., 31.),
+            text(23.2, 550, -0.035).leading(1.3),
+            WHITE,
+            false,
+        );
+
+        for (index, _) in state.preferences.quick_actions.iter().enumerate() {
+            let row = index / 4;
+            let column = index % 4;
+            quick_action_button(
+                out,
+                state,
+                assets,
+                index,
+                Rect::new(
+                    84. + column as f32 * 438.,
+                    input_y + 58.4 + row as f32 * 84.,
+                    416.,
+                    68.,
+                ),
+            );
+        }
+
+        let rows = state.preferences.quick_actions.len().div_ceil(4);
+        input_y += 58.4 + rows as f32 * 84. + 41.6;
+    }
+
     let inputs: Vec<_> = state
         .inventory
         .inputs
@@ -1454,6 +1485,65 @@ fn home(out: &mut Scene, state: &State, assets: &Assets, now: OffsetDateTime) {
         }
         out.control(Target::Input(input.id.clone()), rect, true);
     }
+}
+
+fn quick_action_button(out: &mut Scene, state: &State, assets: &Assets, index: usize, rect: Rect) {
+    let Some(action) = state.preferences.quick_actions.get(index) else {
+        return;
+    };
+
+    let language = state.preferences.language;
+    let (label, icon) = match action {
+        QuickAction::App(id) => {
+            let Some(app) = state.inventory.apps.iter().find(|app| &app.id == id) else {
+                return;
+            };
+            (app.title.clone(), "sparkles".to_owned())
+        }
+        QuickAction::Input(id) => {
+            let Some(input) = state.inventory.inputs.iter().find(|input| &input.id == id) else {
+                return;
+            };
+            let name = state.preferences.input_name(input);
+            (
+                state.preferences.input_title(input).to_owned(),
+                format!("input-{}", input_icon(input, name)),
+            )
+        }
+        QuickAction::CustomTile(id) => {
+            let Some(tile) = state.preferences.custom_tile(id) else {
+                return;
+            };
+            (tile.title.clone(), tile.icon().to_owned())
+        }
+        QuickAction::RefreshHome => (language.t("refreshHome").to_owned(), "refresh".to_owned()),
+        QuickAction::SystemSettings => (language.t("settings").to_owned(), "settings".to_owned()),
+    };
+
+    let target = Target::QuickAction(index);
+    let focused = state.focus == target;
+    out.pill(rect, focused, false);
+
+    let color = if focused {
+        c(0x242424, 1.)
+    } else {
+        c(0xeeeeee, 0.82)
+    };
+
+    out.icon(
+        assets,
+        &icon,
+        Rect::new(rect.x + 22., rect.y + 21., 26., 26.),
+        color,
+    );
+    out.text(
+        &label,
+        Rect::new(rect.x + 64., rect.y + 19., rect.w - 84., 30.),
+        text(20., 550, -0.015),
+        color,
+        false,
+    );
+    out.control(target, rect, true);
 }
 
 struct WeatherSummary {
@@ -2266,6 +2356,7 @@ fn settings_sidebar(out: &mut Scene, state: &State, assets: &Assets) {
                 Some(Subpage::Date) => language.t("date"),
                 Some(Subpage::Weather) => language.t("weather"),
                 Some(Subpage::Shortcuts) => language.t("shortcuts"),
+                Some(Subpage::QuickActions) => language.t("quickActions"),
                 Some(Subpage::Inputs) => language.t("inputs"),
                 Some(Subpage::Clock) => language.t("clock"),
                 Some(Subpage::Language) => language.t("language"),
@@ -2345,6 +2436,7 @@ fn settings_content(out: &mut Scene, state: &State, assets: &Assets) {
             Subpage::WeatherLocation
                 | Subpage::Weather
                 | Subpage::Shortcuts
+                | Subpage::QuickActions
                 | Subpage::Inputs
                 | Subpage::Greeting
                 | Subpage::Date
@@ -2355,6 +2447,7 @@ fn settings_content(out: &mut Scene, state: &State, assets: &Assets) {
                 Subpage::WeatherLocation => location_settings(out, state, assets),
                 Subpage::Weather => weather_settings(out, state, assets),
                 Subpage::Shortcuts => shortcut_settings(out, state, assets),
+                Subpage::QuickActions => quick_action_settings(out, state, assets),
                 Subpage::Inputs => inputs_settings(out, state, assets),
                 Subpage::Greeting => greeting_settings(out, state, assets),
                 Subpage::Date => date_settings(out, state, assets),
@@ -2426,6 +2519,7 @@ fn settings_content(out: &mut Scene, state: &State, assets: &Assets) {
             Subpage::WeatherLocation
             | Subpage::Weather
             | Subpage::Shortcuts
+            | Subpage::QuickActions
             | Subpage::Inputs
             | Subpage::Greeting
             | Subpage::Date
@@ -2643,6 +2737,7 @@ fn settings_content(out: &mut Scene, state: &State, assets: &Assets) {
                 (0, "greeting", "type"),
                 (1, "weather", "weather-sun"),
                 (2, "shortcuts", "sparkles"),
+                (5, "quickActions", "power"),
                 (3, "inputs", "input-hdmi"),
             ]
             .into_iter()
@@ -3066,6 +3161,71 @@ fn input_name_rows(out: &mut Scene, state: &State, assets: &Assets, id: &str, y:
 fn settings_surface(out: &mut Scene, rect: Rect, radius: f32) {
     out.shape(rect, radius, c(0x171c20, 0.72));
     out.border(rect, radius, 1., c(0xffffff, 0.07));
+}
+
+fn quick_action_settings(out: &mut Scene, state: &State, assets: &Assets) {
+    let language = state.preferences.language;
+    let candidates = state.quick_action_candidates();
+
+    for (index, action) in candidates.iter().enumerate() {
+        let (title, icon) = match action {
+            QuickAction::RefreshHome => {
+                (language.t("refreshHome").to_owned(), "refresh".to_owned())
+            }
+            QuickAction::SystemSettings => {
+                (language.t("settings").to_owned(), "settings".to_owned())
+            }
+            QuickAction::Input(id) => {
+                let Some(input) = state.inventory.inputs.iter().find(|input| &input.id == id)
+                else {
+                    continue;
+                };
+                (
+                    state.preferences.input_title(input).to_owned(),
+                    "input-hdmi".to_owned(),
+                )
+            }
+            QuickAction::App(id) => {
+                let Some(app) = state.inventory.apps.iter().find(|app| &app.id == id) else {
+                    continue;
+                };
+                (app.title.clone(), "sparkles".to_owned())
+            }
+            QuickAction::CustomTile(id) => {
+                let Some(tile) = state.preferences.custom_tile(id) else {
+                    continue;
+                };
+                (tile.title.clone(), tile.icon().to_owned())
+            }
+        };
+
+        let order = state
+            .preferences
+            .quick_actions
+            .iter()
+            .position(|saved| saved == action)
+            .map(|position| (position + 1).to_string());
+
+        row(
+            out,
+            state,
+            assets,
+            Row {
+                target: Target::QuickActionToggle(index),
+                rect: Rect::new(640., 164.8 + index as f32 * 84. - state.scroll, 1120., 72.),
+                title: &title,
+                icon: Some(&icon),
+                value: if state.moving_quick_action.as_ref() == Some(action) {
+                    Some(language.t("reordering"))
+                } else {
+                    order.as_deref()
+                },
+                description: None,
+                selected: state.preferences.quick_actions.contains(action),
+                chevron: false,
+            },
+        );
+    }
 }
 
 fn shortcut_settings(out: &mut Scene, state: &State, assets: &Assets) {

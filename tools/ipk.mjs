@@ -85,6 +85,7 @@ export function normalizeAndVerifyPackage(bytes, manifest) {
     manifest.largeIcon,
     'autostart.sh',
     'home.sh',
+    'self-update.sh',
     'luma-helper',
     'splash.png',
     'lib/libSDL2-2.0.so.0',
@@ -169,6 +170,7 @@ export function normalizeAndVerifyPackage(bytes, manifest) {
       file.type === '5' ||
       file.name.endsWith('/autostart.sh') ||
       file.name.endsWith('/home.sh') ||
+      file.name.endsWith('/self-update.sh') ||
       file.name.endsWith('/luma-helper') ||
       file.name.endsWith(`/${manifest.main}`);
     file.header.write(executable ? '0000755\0' : '0000644\0', 100, 8, 'ascii');

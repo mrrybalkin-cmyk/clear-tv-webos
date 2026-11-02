@@ -111,6 +111,19 @@ test('the real release command combines changesets and synchronizes every file',
   assert.deepEqual(await fs.readdir(path.join(directory, '.changeset')), ['config.json']);
 });
 
+
+test('TV package contract always stages and verifies the self updater', async () => {
+  const packageSource = await fs.readFile(path.join(root, 'tools/package.mjs'), 'utf8');
+  const verifierSource = await fs.readFile(path.join(root, 'tools/ipk.mjs'), 'utf8');
+
+  assert.match(
+    packageSource,
+    /for \(const file of \['home\.sh', 'self-update\.sh', 'luma-helper'\]\)/,
+  );
+  assert.match(verifierSource, /'self-update\.sh'/);
+  assert.match(verifierSource, /file\.name\.endsWith\('\/self-update\.sh'\)/);
+});
+
 function gateFixture({ pull = {}, previous = '2.0.3', current = '2.0.4', event = {} } = {}) {
   const context = {
     eventName: 'push',

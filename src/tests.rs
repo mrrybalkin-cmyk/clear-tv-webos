@@ -458,6 +458,158 @@ fn preferences_round_trip_and_corrupt_data_is_not_silently_overwritten() {
 }
 
 #[test]
+fn quick_actions_round_trip_deduplicate_and_respect_limit() {
+    use crate::model::{QUICK_ACTION_LIMIT, QuickAction};
+
+    let directory =
+        std::env::temp_dir().join(format!("luma-quick-actions-test-{}", std::process::id()));
+    let path = directory.join("preferences.json");
+
+    let mut preferences = Preferences::default();
+    preferences.quick_actions = vec![
+        QuickAction::RefreshHome,
+        QuickAction::RefreshHome,
+        QuickAction::SystemSettings,
+        QuickAction::App("com.test.app0".into()),
+        QuickAction::App("com.test.app1".into()),
+        QuickAction::App("com.test.app2".into()),
+        QuickAction::App("com.test.app3".into()),
+        QuickAction::App("com.test.app4".into()),
+        QuickAction::App("com.test.app5".into()),
+        QuickAction::App("com.test.app6".into()),
+        QuickAction::App("com.test.app7".into()),
+        QuickAction::App("com.test.app8".into()),
+    ];
+
+    preferences.sanitize();
+
+    assert_eq!(preferences.quick_actions.len(), QUICK_ACTION_LIMIT);
+    assert_eq!(preferences.quick_actions[0], QuickAction::RefreshHome);
+    assert_eq!(preferences.quick_actions[1], QuickAction::SystemSettings);
+
+    storage::save(&path, &preferences).unwrap();
+    let loaded = storage::load(&path).unwrap();
+
+    assert_eq!(loaded.quick_actions, preferences.quick_actions);
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn quick_actions_execute_system_actions_and_ignore_missing_indexes() {
+    use crate::model::QuickAction;
+
+    let mut state = ready();
+    state.preferences.quick_actions = vec![QuickAction::RefreshHome, QuickAction::SystemSettings];
+
+    state.focus = Target::QuickAction(0);
+    assert_eq!(
+        state.activate(),
+        vec![Effect::Reload, Effect::RefreshInputs]
+    );
+
+    state.focus = Target::QuickAction(1);
+    assert_eq!(
+        state.activate(),
+        vec![Effect::Launch("com.palm.app.settings".into())]
+    );
+
+    state.focus = Target::QuickAction(99);
+    assert!(state.activate().is_empty());
+}
+
+#[test]
+fn quick_action_settings_toggle_actions_and_preserve_addition_order() {
+    use crate::model::QuickAction;
+
+    let mut state = ready();
+    state.open(2);
+
+    state.focus = Target::Widget(5);
+    assert!(state.activate().is_empty());
+    assert_eq!(state.subpage, Some(crate::state::Subpage::QuickActions));
+    assert_eq!(state.focus, Target::QuickActionToggle(0));
+
+    state.focus = Target::QuickActionToggle(1);
+    assert_eq!(state.activate(), vec![Effect::Save]);
+
+    state.focus = Target::QuickActionToggle(0);
+    assert_eq!(state.activate(), vec![Effect::Save]);
+
+    assert_eq!(
+        state.preferences.quick_actions,
+        vec![QuickAction::SystemSettings, QuickAction::RefreshHome]
+    );
+
+    state.focus = Target::QuickActionToggle(1);
+    assert_eq!(state.activate(), vec![Effect::Save]);
+    assert_eq!(
+        state.preferences.quick_actions,
+        vec![QuickAction::RefreshHome]
+    );
+
+    assert!(state.back().is_empty());
+    assert_eq!(state.focus, Target::Widget(5));
+}
+
+#[test]
+fn home_down_routes_through_quick_actions_before_inputs() {
+    use crate::model::QuickAction;
+
+    let mut state = ready();
+    state.preferences.quick_actions = vec![QuickAction::RefreshHome, QuickAction::SystemSettings];
+
+    let page = controls(&state);
+    let app = page
+        .iter()
+        .find_map(|control| match &control.target {
+            Target::App(id) => Some(id.clone()),
+            _ => None,
+        })
+        .expect("home favorite app");
+
+    state.focus = Target::App(app);
+    state.direction(Direction::Down, &page);
+    assert!(matches!(state.focus, Target::QuickAction(_)));
+
+    let page = controls(&state);
+    state.direction(Direction::Down, &page);
+    assert!(matches!(state.focus, Target::Input(_)));
+
+    let page = controls(&state);
+    state.direction(Direction::Up, &page);
+    assert!(matches!(state.focus, Target::QuickAction(_)));
+}
+
+#[test]
+fn quick_action_reorder_uses_hold_and_preserves_selected_identity() {
+    use crate::model::QuickAction;
+
+    let mut state = ready();
+    state.open(2);
+    state.preferences.quick_actions = vec![QuickAction::RefreshHome, QuickAction::SystemSettings];
+    state.subpage = Some(crate::state::Subpage::QuickActions);
+    state.focus = Target::QuickActionToggle(0);
+
+    state.hold();
+    assert_eq!(state.moving_quick_action, Some(QuickAction::RefreshHome));
+
+    assert_eq!(
+        state.direction(Direction::Down, &controls(&state)),
+        vec![Effect::Save]
+    );
+    assert_eq!(
+        state.preferences.quick_actions,
+        vec![QuickAction::SystemSettings, QuickAction::RefreshHome]
+    );
+    assert_eq!(state.focus, Target::QuickActionToggle(0));
+
+    assert!(state.activate().is_empty());
+    assert!(state.moving_quick_action.is_none());
+    assert_eq!(state.focus, Target::QuickActionToggle(0));
+}
+
+#[test]
 fn gallery_and_grid_navigation_scroll_to_keep_focus_visible() {
     let mut state = ready();
     state.set_wallpapers(vec![crate::wallpapers::Wallpaper {
@@ -2375,16 +2527,14 @@ fn widgets_group_existing_settings_and_restore_each_parent_without_changing_pref
             _ => None,
         })
         .collect();
-    assert_eq!(widget_order, [4, 0, 1, 2, 3]);
+    assert_eq!(widget_order, [4, 0, 1, 2, 5, 3]);
     for (index, subpage) in [
-        Subpage::Greeting,
-        Subpage::Weather,
-        Subpage::Shortcuts,
-        Subpage::Inputs,
-    ]
-    .into_iter()
-    .enumerate()
-    {
+        (0, Subpage::Greeting),
+        (1, Subpage::Weather),
+        (2, Subpage::Shortcuts),
+        (5, Subpage::QuickActions),
+        (3, Subpage::Inputs),
+    ] {
         state.focus = Target::Widget(index);
         state.direction(Direction::Right, &controls(&state));
         assert_eq!(state.subpage, Some(subpage));
@@ -2457,13 +2607,14 @@ fn widgets_are_localized_without_legacy_sidebar_entries() {
                 .iter()
                 .filter(|c| matches!(c.target, Target::Widget(_)))
                 .count(),
-            5
+            6
         );
         for key in [
             "widgets",
             "greeting",
             "weather",
             "shortcuts",
+            "quickActions",
             "inputs",
             "date",
         ] {
