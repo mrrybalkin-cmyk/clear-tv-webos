@@ -102,7 +102,8 @@ function contains(state, key, language) {
 }
 const picker = 'settings,down,enter,down,down,enter';
 const weatherPage = 'settings,down,down,down,enter,down,down,enter';
-const inputsPage = 'settings,down,down,down,enter,down,down,down,down,enter';
+// Widgets order includes the existing Quick Actions row before Inputs.
+const inputsPage = 'settings,down,down,down,enter,down,down,down,down,down,enter';
 const location = `${weatherPage},down,enter`;
 try {
   if (process.env.LUMA_SMOKE_SKIP_BUILD !== '1')

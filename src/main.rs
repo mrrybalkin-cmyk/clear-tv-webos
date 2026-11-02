@@ -127,7 +127,7 @@ impl Options {
                     "  --test-update-version VERSION  Preview an available update without HTTP; also LUMA_TEST_UPDATE_VERSION"
                 );
                 println!(
-                    "\n  Press Back / Escape on Home, or hold for 600 ms, to open Recent apps.\n  --script recents,await-recents  Open the desktop recent-app preview."
+                    "\n  Press Back / Escape on Home, or hold for 600 ms, to open Recent apps. Script await-idle waits for animations to settle.\n  --script recents,await-recents  Open the desktop recent-app preview."
                 );
                 std::process::exit(0);
             }
@@ -439,6 +439,7 @@ fn script(
         "await-search" => vec![],
         "await-weather" => vec![],
         "await-recents" => vec![],
+        "await-idle" => vec![],
         "await-upload" => vec![],
         "await-tile-editor" => vec![],
         _ => return Err(format!("Unknown scripted action: {action}")),
@@ -1689,6 +1690,7 @@ fn run() -> Result<(), String> {
                 (action == "await-search" && state.weather.searching)
                     || (action == "await-weather" && state.weather.fetching())
                     || (action == "await-recents" && state.recents.pending.is_some())
+                    || (action == "await-idle" && state.animating())
                     || (action == "await-upload"
                         && matches!(state.overlay, Some(Overlay::WallpaperUpload))
                         && state.wallpaper_upload.is_none())
@@ -1792,7 +1794,10 @@ fn run() -> Result<(), String> {
             pill_width += (target_width - pill_width) * (1. - (-20. * dt).exp());
             state.dirty = true;
         }
-        let final_frame = options.frames.is_some_and(|limit| frame + 1 >= limit)
+        // An explicit await-idle barrier waits for observed animation state,
+        // even if a fast renderer reaches the requested frame budget first.
+        let final_frame = (options.frames.is_some_and(|limit| frame + 1 >= limit)
+            && options.script.front().is_none_or(|a| a != "await-idle"))
             || (visible
                 && options
                     .profile_frames

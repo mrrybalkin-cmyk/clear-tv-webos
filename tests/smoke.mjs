@@ -101,7 +101,7 @@ try {
   assert.deepEqual(recentClosed.focus, { Recent: 'com.disney.disneyplus-prod' });
   const recentsEmpty = await scenario(
     'recents-empty',
-    `recents,await-recents,${Array(8).fill('up,await-recents').join(',')}`,
+    `recents,await-recents,${Array(8).fill('up,await-recents').join(',')},await-idle`,
     [],
     // Let the final card finish its upward exit before capturing the empty state.
     150,
@@ -219,7 +219,8 @@ try {
   assert.equal(clock.focus, 'ClockFormat');
   assert.ok(clock.ui_text.includes('Clock format'));
   assert.ok(clock.ui_text.includes('Time format'));
-  const inputsPage = 'settings,down,down,down,enter,down,down,down,down,enter';
+  // Widgets order includes the existing Quick Actions row before Inputs.
+  const inputsPage = 'settings,down,down,down,enter,down,down,down,down,down,enter';
   const inputs = await scenario('inputs-page', inputsPage);
   assert.equal(inputs.subpage, 'Inputs');
   assert.deepEqual(inputs.focus, { InputMode: 'com.webos.app.hdmi1' });
