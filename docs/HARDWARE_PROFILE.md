@@ -26,7 +26,8 @@ Firmware: 43.21.79
 | Remote OK | PASS |
 | Remote Back | PASS |
 | Autostart | PASS |
-| Home takeover | PASS |
+| Home takeover capability | PASS |
+| Standalone app mode | PASS |
 
 ## Notes
 
@@ -60,3 +61,25 @@ Validated on OLED42C6RLA:
 - stock Luma backup verified by SHA-256
 
 Rollback remains available through the saved stock backup and `home.sh disable`.
+
+## Current operating mode
+
+Date: 2026-11-02
+
+Branch: feat/clear-tv-home-ui
+
+Current configuration:
+
+- stock LG Home remains active
+- Clear TV runs as a standalone application
+- Home takeover is disabled
+- remote control works normally inside Clear TV
+- configurable Quick Actions passed hardware validation
+- Quick Actions navigation and reordering passed hardware validation
+- Home takeover remains available as an optional reversible mode
+
+A Magic Remote pairing loss occurred during testing.
+
+Remote operation was restored by re-registering the Magic Remote.
+
+No evidence currently links the pairing loss to Quick Actions.

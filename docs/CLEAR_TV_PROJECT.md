@@ -25,7 +25,8 @@ Primary validated device:
 - HDMI inputs: verified
 - Remote navigation: verified
 - Luma autostart: verified
-- Luma Home takeover: verified
+- Luma Home takeover capability: verified
+- Current operating mode: standalone application on stock LG Home
 
 This configuration is the Known Good Hardware baseline.
 
@@ -104,7 +105,13 @@ Use placeholders for local network configuration.
 
 ## Home takeover
 
-Home takeover is already verified on the primary television.
+Home takeover capability is verified on the primary television.
+
+The current recommended operating mode keeps stock LG Home active.
+
+Clear TV runs as a standalone application.
+
+Home takeover remains optional and disabled by default during current development.
 
 Do not change takeover logic without explicit project need.
 
