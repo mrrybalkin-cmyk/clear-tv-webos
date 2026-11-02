@@ -209,24 +209,10 @@ impl State {
                     format!("Clear TV {}", env!("CARGO_PKG_VERSION")),
                     format!(
                         "Apps: {} | Inputs: {}",
-                        if d.inventory.is_some() {
-                            self.inventory
-                                .apps
-                                .iter()
-                                .filter(|a| {
-                                    !a.id.starts_with("custom.")
-                                        && !crate::scroll_preview::is_placeholder(&a.id)
-                                })
-                                .count()
-                                .to_string()
-                        } else {
-                            "Unavailable".into()
-                        },
-                        if d.inputs.is_some() {
-                            self.inventory.inputs.len().to_string()
-                        } else {
-                            "Unavailable".into()
-                        }
+                        d.apps
+                            .map_or_else(|| "Unavailable".into(), |n| n.to_string()),
+                        d.input_count
+                            .map_or_else(|| "Unavailable".into(), |n| n.to_string())
                     ),
                     format!(
                         "Inventory success: {} | Loading: {}",

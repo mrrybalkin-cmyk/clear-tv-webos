@@ -1003,9 +1003,9 @@ fn root_tool(
             .and_then(Value::as_str)
             .filter(|id| is_home_id(id))
             .map(str::to_owned),
-        helper: Some(directory.join("luma-helper").is_file()),
-        home_script: Some(directory.join("home.sh").is_file()),
-        updater_script: Some(directory.join("self-update.sh").is_file()),
+        helper: crate::system_diagnostics::component(directory.join("luma-helper")),
+        home_script: crate::system_diagnostics::component(directory.join("home.sh")),
+        updater_script: crate::system_diagnostics::component(directory.join("self-update.sh")),
     })
 }
 fn smart_step(step: &crate::smart_actions::Step) -> Result<SmartResult, String> {

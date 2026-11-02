@@ -1114,10 +1114,10 @@ fn run() -> Result<(), String> {
                     if result.is_err() {
                         match state.smart.current_step() {
                             Some(smart_actions::Step::RefreshInventory) => {
-                                state.system.inventory = Some(false)
+                                state.system.inventory = webos.then_some(false)
                             }
                             Some(smart_actions::Step::RefreshInputs) => {
-                                state.system.inputs = Some(false)
+                                state.system.inputs = webos.then_some(false)
                             }
                             _ => {}
                         }
@@ -1127,10 +1127,14 @@ fn run() -> Result<(), String> {
                         platform::SmartResult::Done => {}
                         platform::SmartResult::Inventory(inv) => {
                             state.system.inventory = Some(true);
+                            state.system.inputs = Some(true);
+                            state.system.apps = Some(inv.apps.len());
+                            state.system.input_count = Some(inv.inputs.len());
                             state.set_inventory(inv, None);
                         }
                         platform::SmartResult::Inputs(inputs) => {
                             state.system.inputs = Some(true);
+                            state.system.input_count = Some(inputs.len());
                             state.set_inputs(inputs);
                         }
                     });
@@ -1141,8 +1145,14 @@ fn run() -> Result<(), String> {
                     if warning.is_none() {
                         input_refresh.superseded(Instant::now());
                     }
-                    state.system.inventory = Some(true);
-                    state.system.inputs = Some(warning.is_none());
+                    if webos {
+                        state.system.inventory = Some(true);
+                        state.system.apps = Some(inventory.apps.len());
+                        state.system.inputs = Some(warning.is_none());
+                        if warning.is_none() {
+                            state.system.input_count = Some(inventory.inputs.len());
+                        }
+                    }
                     prewarm = vec![state::Page::Settings, state::Page::Apps];
                     if std::mem::take(&mut state.reload_artwork) {
                         assets.artwork.reset();
@@ -1174,7 +1184,7 @@ fn run() -> Result<(), String> {
                     initial_focus = false;
                 }
                 Response::Inventory(Err(error)) => {
-                    state.system.inventory = Some(false);
+                    state.system.inventory = webos.then_some(false);
                     if let Some(delay) = state.inventory_failed(error) {
                         eprintln!(
                             "Luma TV inventory: retry {} in {} s",
@@ -1188,7 +1198,12 @@ fn run() -> Result<(), String> {
                     }
                 }
                 Response::Inputs(result) => {
-                    state.system.inputs = Some(result.is_ok());
+                    if webos {
+                        state.system.inputs = Some(result.is_ok());
+                        if let Ok(inputs) = &result {
+                            state.system.input_count = Some(inputs.len());
+                        }
+                    }
                     if let Err(error) = input_refresh.completed(Instant::now(), result) {
                         eprintln!("Luma HDMI refresh: {error}");
                     }

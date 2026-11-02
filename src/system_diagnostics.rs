@@ -28,6 +28,8 @@ impl SystemSnapshot {
 pub struct Diagnostics {
     pub snapshot: SystemSnapshot,
     pub inventory: Option<bool>,
+    pub apps: Option<usize>,
+    pub input_count: Option<usize>,
     pub inputs: Option<bool>,
     pub last_error: Option<String>,
 }
@@ -52,12 +54,27 @@ pub fn available(value: Option<bool>) -> &'static str {
         None => "Unavailable",
     }
 }
+/// A failed stat is not evidence that a component is absent.
+pub fn component(path: impl AsRef<std::path::Path>) -> Option<bool> {
+    match std::fs::metadata(path) {
+        Ok(m) => Some(m.is_file()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Some(false),
+        Err(_) => None,
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
     fn unavailable_valid_failed_reply() {
         let mut d = Diagnostics::default();
+        assert_eq!(d.apps, None);
+        assert_eq!(d.input_count, None);
+        assert_eq!(
+            component(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml")),
+            Some(true)
+        );
+        assert_eq!(component("invalid\0component"), None);
         assert_eq!(available(d.snapshot.takeover), "Unavailable");
         d.reply(Ok(SystemSnapshot {
             takeover: Some(false),
