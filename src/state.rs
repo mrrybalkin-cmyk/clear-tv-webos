@@ -10,7 +10,8 @@ use std::time::{Duration, Instant};
 
 pub const WIDGETS_SECTION: usize = 2;
 pub const SYSTEM_SECTION: usize = 3;
-pub const SECTION_COUNT: usize = 4;
+pub const SECTION_COUNT: usize = 5;
+pub const ACTIONS_SECTION: usize = 4;
 pub const SETTINGS_BOTTOM_PADDING: f32 = 64.;
 pub const SETTINGS_LIST_BOTTOM_PADDING: f32 = 48.;
 pub const APPS_COLUMNS: usize = 6;
@@ -47,6 +48,7 @@ pub enum Target {
     Nav(usize),
     TvSettings,
     OpenService,
+    Management(crate::management::Command),
     ServiceRefresh,
     ServiceSettings,
     QuickAction(usize),
@@ -159,6 +161,7 @@ pub enum Subpage {
     Weather,
     Shortcuts,
     QuickActions,
+    Management(crate::management::Panel),
     Inputs,
     Clock,
     ClockFormat,
@@ -176,6 +179,7 @@ pub enum TextField {
     Location,
     Name,
     InputName,
+    ActionName,
 }
 
 #[derive(Clone, Copy)]
@@ -189,6 +193,12 @@ pub enum Direction {
 #[derive(Debug, PartialEq)]
 pub enum Effect {
     Save,
+    SmartStep {
+        token: u64,
+        step: crate::smart_actions::Step,
+    },
+    Root(crate::recovery::RootTool),
+    Recovery(crate::recovery::Recovery),
     /// Read the app inventory again, keeping decoded icons of unchanged apps.
     Refresh,
     /// Refresh apps: read the inventory and every app icon again.
@@ -257,6 +267,13 @@ pub struct State {
     pub greeting_name_draft: String,
     pub input_name: String,
     pub recents: crate::recents::Recents,
+    pub smart: crate::smart_actions::Executor,
+    pub automation: crate::automation::Engine,
+    pub system: crate::system_diagnostics::Diagnostics,
+    pub smart_draft: Option<crate::smart_actions::SmartAction>,
+    pub action_name: String,
+    pub startup_fired: bool,
+    pub automation_offset: Option<time::UtcOffset>,
 }
 
 impl State {
@@ -301,6 +318,13 @@ impl State {
             greeting_name_draft: String::new(),
             input_name: String::new(),
             recents: crate::recents::Recents::default(),
+            smart: Default::default(),
+            automation: Default::default(),
+            system: Default::default(),
+            smart_draft: None,
+            action_name: String::new(),
+            startup_fired: false,
+            automation_offset: None,
         }
     }
 
@@ -640,6 +664,9 @@ impl State {
     }
 
     pub fn set_inventory(&mut self, next: Inventory, warning: Option<String>) {
+        if warning.is_none() {
+            self.management_observe_inputs(&next);
+        }
         self.inventory.apps = next.apps;
         self.sync_custom_tiles();
         if let Some(warning) = warning {
@@ -656,6 +683,11 @@ impl State {
 
     /// Replace only input status; leave installed apps, artwork and saved preferences alone.
     pub fn set_inputs(&mut self, inputs: Vec<crate::model::Input>) {
+        let next = Inventory {
+            apps: vec![],
+            inputs: inputs.clone(),
+        };
+        self.management_observe_inputs(&next);
         if self.inventory.inputs == inputs {
             return;
         }
@@ -986,6 +1018,7 @@ impl State {
                     })
                     .unwrap_or(0),
             ),
+            ACTIONS_SECTION => Target::Management(crate::management::Command::QuickActions),
             WIDGETS_SECTION => Target::Widget(4),
             SYSTEM_SECTION if self.available_update.is_some() => Target::InstallUpdate,
             SYSTEM_SECTION => Target::CheckUpdates,
@@ -1009,6 +1042,13 @@ impl State {
             }
             Some(Subpage::Weather) => Target::Widget(1),
             Some(Subpage::Shortcuts) => Target::Widget(2),
+            Some(Subpage::Management(panel)) => {
+                return self.management_back(panel);
+            }
+            Some(Subpage::QuickActions) if self.section == ACTIONS_SECTION => {
+                self.management_open(crate::management::Panel::Actions);
+                return;
+            }
             Some(Subpage::QuickActions) => Target::Widget(5),
             Some(Subpage::Inputs) => Target::Widget(3),
             Some(Subpage::Clock) => Target::Setting(1),
@@ -1054,6 +1094,35 @@ impl State {
             self.overlay,
             Some(Overlay::WallpaperUpload | Overlay::TileEditor)
         ) {
+            return vec![];
+        }
+        if self.overlay.is_none()
+            && (matches!(self.subpage, Some(Subpage::Management(_)))
+                || (self.section == ACTIONS_SECTION && self.subpage.is_none()))
+            && matches!(self.focus, Target::Management(_))
+        {
+            let rows = self.management_rows();
+            if let Some(index) = rows
+                .iter()
+                .position(|(cmd, _)| self.focus == Target::Management(cmd.clone()))
+            {
+                let next = match direction {
+                    Direction::Up => index.saturating_sub(1),
+                    Direction::Down => (index + 1).min(rows.len().saturating_sub(1)),
+                    Direction::Left => {
+                        let panel = match self.subpage.clone() {
+                            Some(Subpage::Management(p)) => p,
+                            _ => crate::management::Panel::Actions,
+                        };
+                        self.management_back(panel);
+                        return vec![];
+                    }
+                    Direction::Right => return self.activate(),
+                };
+                if let Some((cmd, _)) = rows.get(next) {
+                    self.focus(Target::Management(cmd.clone()), controls);
+                }
+            }
             return vec![];
         }
         if let Some(action) = self.moving_quick_action.clone() {
@@ -1754,6 +1823,15 @@ impl State {
                 self.dirty = true;
                 return;
             }
+            if self.keyboard_field == TextField::ActionName {
+                self.action_name.extend(
+                    text.chars()
+                        .filter(|c| !c.is_control())
+                        .take(40usize.saturating_sub(self.action_name.chars().count())),
+                );
+                self.dirty = true;
+                return;
+            }
             if self.keyboard_field == TextField::Name {
                 let name = &mut self.greeting_name_draft;
                 name.extend(
@@ -1790,6 +1868,8 @@ impl State {
                 let mut query = self.weather.query.clone();
                 query.pop();
                 self.weather.edit(query);
+            } else if self.keyboard_field == TextField::ActionName {
+                self.action_name.pop();
             } else if self.keyboard_field == TextField::Name {
                 self.greeting_name_draft.pop();
             } else if self.keyboard_field == TextField::InputName {
@@ -1821,6 +1901,16 @@ impl State {
     }
 
     fn commit_text_input(&mut self) -> Vec<Effect> {
+        if self.keyboard_field == TextField::ActionName {
+            if let Some(a) = &mut self.smart_draft {
+                let name = clean_input_name(&self.action_name);
+                if !name.is_empty() {
+                    a.name = name;
+                }
+            }
+            return vec![];
+        }
+
         if self.keyboard_field == TextField::Name {
             let name = std::mem::take(&mut self.greeting_name_draft);
             let name = name.trim();
@@ -1927,6 +2017,8 @@ impl State {
         query.replace_range(start..end, "");
         if self.keyboard_field == TextField::Location {
             self.weather.edit(query);
+        } else if self.keyboard_field == TextField::ActionName {
+            self.action_name = query;
         } else if self.keyboard_field == TextField::Name {
             self.greeting_name_draft = query;
         } else if self.keyboard_field == TextField::InputName {
@@ -1943,6 +2035,7 @@ impl State {
             TextField::Location => &self.weather.query,
             TextField::Name => &self.greeting_name_draft,
             TextField::InputName => &self.input_name,
+            TextField::ActionName => &self.action_name,
             TextField::Apps => &self.query,
         }
     }
@@ -1966,6 +2059,7 @@ impl State {
                 TextField::Location => Target::WeatherQuery,
                 TextField::Name => Target::GreetingName,
                 TextField::InputName => Target::InputRename,
+                TextField::ActionName => Target::Management(crate::management::Command::Rename),
                 TextField::Apps => Target::Search,
             };
             self.panel_started = None;
@@ -1994,6 +2088,7 @@ impl State {
             TextField::Location => Target::WeatherSearch,
             TextField::Name => Target::GreetingName,
             TextField::InputName => Target::InputRename,
+            TextField::ActionName => Target::Management(crate::management::Command::Rename),
             TextField::Apps => Target::Search,
         }
     }
@@ -2023,6 +2118,12 @@ impl State {
                 .map(|tile| QuickAction::CustomTile(tile.id.clone())),
         );
 
+        actions.extend(
+            self.preferences
+                .smart_actions
+                .iter()
+                .map(|a| QuickAction::SmartAction(a.id.clone())),
+        );
         actions
     }
 
@@ -2053,6 +2154,7 @@ impl State {
             return self.send_tile(tile);
         }
         match self.focus.clone() {
+            Target::Management(command) => return self.management_activate(command),
             Target::Nav(index) => self.open(index),
             Target::Browse => self.open(1),
             Target::Retry => return vec![Effect::Reload],
@@ -2119,6 +2221,7 @@ impl State {
                     return vec![];
                 };
                 return match action {
+                    QuickAction::SmartAction(id) => self.start_smart(&id),
                     QuickAction::App(id) => {
                         if self.inventory.apps.iter().any(|app| app.id == id) {
                             vec![Effect::Launch(id)]
@@ -2494,7 +2597,8 @@ impl State {
                         }
                     }
                     Some(
-                        Subpage::WeatherLocation
+                        Subpage::Management(_)
+                        | Subpage::WeatherLocation
                         | Subpage::Greeting
                         | Subpage::Date
                         | Subpage::AppNames
@@ -2629,6 +2733,7 @@ impl State {
                     TextField::Location => self.weather.edit(String::new()),
                     TextField::Name => self.greeting_name_draft.clear(),
                     TextField::InputName => self.input_name.clear(),
+                    TextField::ActionName => self.action_name.clear(),
                     TextField::Apps => self.query.clear(),
                 },
                 "Done" => {

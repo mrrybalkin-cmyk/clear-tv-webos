@@ -153,6 +153,7 @@ pub enum QuickAction {
     App(String),
     Input(String),
     CustomTile(String),
+    SmartAction(String),
     RefreshHome,
     SystemSettings,
 }
@@ -451,6 +452,7 @@ impl Preferences {
             self.quick_actions.retain(|action| {
                 let valid = match action {
                     QuickAction::App(id) | QuickAction::Input(id) => valid_app_id(id),
+                    QuickAction::SmartAction(id) => valid_app_id(id),
                     QuickAction::CustomTile(id) => {
                         valid_app_id(id) && id.starts_with(CUSTOM_TILE_PREFIX)
                     }

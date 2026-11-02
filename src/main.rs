@@ -4,6 +4,7 @@ mod app_artwork;
 #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
 #[path = "app-subscription.rs"]
 mod app_subscription;
+mod automation;
 mod branding;
 mod companion;
 mod damage;
@@ -15,20 +16,20 @@ mod i18n;
 mod input_refresh;
 #[cfg(all(feature = "webos", target_os = "linux", target_arch = "arm"))]
 mod luna;
-mod automation;
+mod management;
 mod model;
-mod recovery;
-mod smart_actions;
-mod system_diagnostics;
 mod platform;
 mod raster;
 mod recents;
+mod recovery;
 mod renderer;
 #[path = "scroll-preview.rs"]
 mod scroll_preview;
 mod sdl_events;
+mod smart_actions;
 mod state;
 mod storage;
+mod system_diagnostics;
 mod text_rendering;
 #[path = "tile-editor.rs"]
 mod tile_editor;
@@ -307,6 +308,16 @@ fn effects(
 ) -> bool {
     for effect in effects {
         match effect {
+            Effect::SmartStep { token, step } => platform.send(Request::SmartStep { token, step }),
+            Effect::Root(tool) => platform.send(Request::Root(tool)),
+            Effect::Recovery(action) => {
+                let _category = action.safety();
+                match action {
+                    recovery::Recovery::RefreshInventory => platform.send(Request::Refresh),
+                    recovery::Recovery::RefreshInputs => platform.send(Request::RefreshInputs),
+                    recovery::Recovery::ReopenStockHome => platform.send(Request::Recovery(action)),
+                }
+            }
             Effect::Save => {
                 if let Err(error) = storage::save(preferences, &state.preferences) {
                     eprintln!("{error}");
@@ -641,9 +652,8 @@ fn run() -> Result<(), String> {
         }
     }
     // Resolve the local offset before artwork, HTTP or platform workers start.
-    let local_offset = OffsetDateTime::now_local()
-        .map(|now| now.offset())
-        .unwrap_or(time::UtcOffset::UTC);
+    let observed_offset = OffsetDateTime::now_local().ok().map(|now| now.offset());
+    let local_offset = observed_offset.unwrap_or(time::UtcOffset::UTC);
     let root = match options.assets.clone() {
         Some(root) => root,
         None if webos => platform::install_dir()?.join("assets"),
@@ -676,6 +686,7 @@ fn run() -> Result<(), String> {
         options.test_update_version.is_some(),
     );
     let mut state = State::new(initial_preferences);
+    state.automation_offset = observed_offset;
     if let Some(version) = &options.test_update_version {
         eprintln!(
             "Luma update preview: simulated version {version}; public release check disabled"
@@ -1088,10 +1099,50 @@ fn run() -> Result<(), String> {
         }
         while let Ok(response) = platform.receiver.try_recv() {
             match response {
+                Response::Recovered(result) => match result {
+                    Ok(()) => state.notify("Stock Home launch accepted"),
+                    Err(e) => state.notify(e),
+                },
+                Response::Root(result) => {
+                    state.system.reply(result);
+                    state.dirty = true;
+                }
+                Response::SmartStep { token, result } => {
+                    if !state.smart.accepts(token) {
+                        continue;
+                    }
+                    if result.is_err() {
+                        match state.smart.current_step() {
+                            Some(smart_actions::Step::RefreshInventory) => {
+                                state.system.inventory = Some(false)
+                            }
+                            Some(smart_actions::Step::RefreshInputs) => {
+                                state.system.inputs = Some(false)
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    let result = result.map(|value| match value {
+                        platform::SmartResult::Done => {}
+                        platform::SmartResult::Inventory(inv) => {
+                            state.system.inventory = Some(true);
+                            state.set_inventory(inv, None);
+                        }
+                        platform::SmartResult::Inputs(inputs) => {
+                            state.system.inputs = Some(true);
+                            state.set_inputs(inputs);
+                        }
+                    });
+                    state.smart.reply(token, result);
+                    state.dirty = true;
+                }
                 Response::Inventory(Ok((mut inventory, warning))) => {
                     if warning.is_none() {
                         input_refresh.superseded(Instant::now());
                     }
+                    state.system.inventory = Some(true);
+                    state.system.inputs = Some(warning.is_none());
                     prewarm = vec![state::Page::Settings, state::Page::Apps];
                     if std::mem::take(&mut state.reload_artwork) {
                         assets.artwork.reset();
@@ -1123,6 +1174,7 @@ fn run() -> Result<(), String> {
                     initial_focus = false;
                 }
                 Response::Inventory(Err(error)) => {
+                    state.system.inventory = Some(false);
                     if let Some(delay) = state.inventory_failed(error) {
                         eprintln!(
                             "Luma TV inventory: retry {} in {} s",
@@ -1136,6 +1188,7 @@ fn run() -> Result<(), String> {
                     }
                 }
                 Response::Inputs(result) => {
+                    state.system.inputs = Some(result.is_ok());
                     if let Err(error) = input_refresh.completed(Instant::now(), result) {
                         eprintln!("Luma HDMI refresh: {error}");
                     }
@@ -1669,6 +1722,17 @@ fn run() -> Result<(), String> {
         if input_refresh.due(Instant::now(), inputs_active) {
             platform.send(Request::RefreshInputs);
         }
+        let pending = state.management_tick(Instant::now());
+        running &= effects(
+            pending,
+            &mut state,
+            &platform,
+            &preferences_path,
+            &weather_service,
+            &wallpaper_service,
+            &webhook_service,
+            &updates,
+        );
         weather_tick(&mut state, &weather_service, visible);
         // SDL-webOS disables text input when its own panel is dismissed, even
         // if it did not forward a Back/Return key to the application.
@@ -1900,6 +1964,7 @@ fn run() -> Result<(), String> {
     if let Some(path) = options.dump {
         let state = serde_json::json!({ "page": state.page, "focus": state.focus, "query": state.query,
             "filter": state.filter, "preferences": state.preferences, "apps": state.apps().iter().map(|a| &a.id).collect::<Vec<_>>(),
+            "smart_status":state.smart.status,"automation_status":state.automation.status,
             "update_status": state.update_status, "available_update": state.available_update,
             "error": state.error, "scroll": state.scroll, "home_scroll": state.home_scroll, "subpage": state.subpage, "modal": state.overlay.is_some(), "weather": state.weather,
             "inventory": state.inventory.apps,

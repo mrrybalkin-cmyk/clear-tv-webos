@@ -173,6 +173,12 @@ pub fn redirect_to_home() -> Result<bool, String> {
 }
 
 pub enum Request {
+    Recovery(crate::recovery::Recovery),
+    SmartStep {
+        token: u64,
+        step: crate::smart_actions::Step,
+    },
+    Root(crate::recovery::RootTool),
     Refresh,
     RefreshInputs,
     Launch(String),
@@ -184,6 +190,12 @@ pub enum Request {
     },
 }
 pub enum Response {
+    Recovered(Result<(), String>),
+    SmartStep {
+        token: u64,
+        result: Result<SmartResult, String>,
+    },
+    Root(Result<crate::system_diagnostics::SystemSnapshot, String>),
     Inventory(Result<(Inventory, Option<String>), String>),
     Inputs(Result<Vec<Input>, String>),
     Launched(Result<(), String>),
@@ -196,6 +208,12 @@ pub enum Response {
         command: crate::recents::Command,
         result: Result<Option<Vec<crate::recents::Entry>>, String>,
     },
+}
+
+pub enum SmartResult {
+    Done,
+    Inventory(Inventory),
+    Inputs(Vec<Input>),
 }
 
 pub struct Platform {
@@ -219,6 +237,17 @@ impl Platform {
             };
             while let Ok(request) = requests.recv() {
                 let response = match request {
+                    Request::Recovery(action) => Response::Recovered(recover(webos, action)),
+                    Request::Root(tool) => Response::Root(root_tool(webos, tool)),
+                    Request::SmartStep { token, step } => {
+                        let result = if !webos {
+                            Err("Smart Actions require a TV backend; desktop does not execute TV actions".into())
+                        } else {
+                            smart_step(&step)
+                        };
+                        Response::SmartStep { token, result }
+                    }
+
                     Request::Recent {
                         generation,
                         command,
@@ -947,5 +976,119 @@ mod home_identity_tests {
     fn both_home_variants_are_hidden_from_application_inventory() {
         let raw = json!([{"id":HOME_ID,"title":"Home","visible":true}, {"id":FULL_HOME_ID,"title":"Home","visible":true}]);
         assert!(normalize_apps(&raw).unwrap().is_empty());
+    }
+}
+
+/// No free-form command entry point: this handler accepts only a closed enum.
+fn root_tool(
+    webos: bool,
+    tool: crate::recovery::RootTool,
+) -> Result<crate::system_diagnostics::SystemSnapshot, String> {
+    let _category = tool.safety();
+    if !webos {
+        return Err("System observations unavailable on desktop".into());
+    }
+    let directory = install_dir()?;
+    let args = tool.arguments();
+    let command = helper_command("home", &args)?;
+    let envelope = call(
+        "luna://org.webosbrew.hbchannel.service/exec",
+        json!({"command":command}),
+    )?;
+    let home = command_reply(&envelope)?;
+    Ok(crate::system_diagnostics::SystemSnapshot {
+        takeover: crate::system_diagnostics::SystemSnapshot::from_home(&home)?,
+        stock_home: home
+            .get("homeId")
+            .and_then(Value::as_str)
+            .filter(|id| is_home_id(id))
+            .map(str::to_owned),
+        helper: Some(directory.join("luma-helper").is_file()),
+        home_script: Some(directory.join("home.sh").is_file()),
+        updater_script: Some(directory.join("self-update.sh").is_file()),
+    })
+}
+fn smart_step(step: &crate::smart_actions::Step) -> Result<SmartResult, String> {
+    use crate::smart_actions::Step;
+    let _category = step.safety();
+    if !step.valid() {
+        return Err("Invalid Smart Action step".into());
+    }
+    match step {
+        Step::LaunchApp(_) | Step::LaunchInput(_) => {
+            let (inv, _) = inventory()?;
+            step.validate_target(&inv)?;
+            let id = match step {
+                Step::LaunchApp(id) | Step::LaunchInput(id) => id,
+                _ => unreachable!(),
+            };
+            call(
+                "luna://com.webos.applicationManager/launch",
+                json!({"id":id}),
+            )?;
+            Ok(SmartResult::Done)
+        }
+        Step::OpenSystemSettings => {
+            call(
+                "luna://com.webos.applicationManager/launch",
+                json!({"id":"com.palm.app.settings"}),
+            )?;
+            Ok(SmartResult::Done)
+        }
+        Step::RefreshInventory => {
+            let (inv, warning) = inventory()?;
+            if let Some(w) = warning {
+                return Err(w);
+            }
+            Ok(SmartResult::Inventory(inv))
+        }
+        Step::RefreshInputs => input_inventory().map(SmartResult::Inputs),
+        Step::Delay(_) => Err("Delay belongs to the scheduler".into()),
+    }
+}
+
+fn recover(webos: bool, action: crate::recovery::Recovery) -> Result<(), String> {
+    let _category = action.safety();
+    match action {
+        crate::recovery::Recovery::ReopenStockHome => {
+            let status = root_tool(webos, crate::recovery::RootTool::HomeStatus)?;
+            let id = crate::recovery::stock_home(&status)?;
+            call(
+                "luna://com.webos.applicationManager/launch",
+                json!({"id":id}),
+            )
+            .map(|_| ())
+        }
+        _ => Err("Inventory recovery must use the existing refresh worker".into()),
+    }
+}
+#[cfg(test)]
+mod action_worker_tests {
+    use super::*;
+    #[test]
+    fn desktop_never_claims_tv_execution_or_system_observations() {
+        let p = Platform::new(false, false);
+        p.send(Request::SmartStep {
+            token: 7,
+            step: crate::smart_actions::Step::RefreshInventory,
+        });
+        let reply = p
+            .receiver
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap();
+        assert!(matches!(
+            reply,
+            Response::SmartStep {
+                token: 7,
+                result: Err(_)
+            }
+        ));
+        p.send(Request::Root(crate::recovery::RootTool::HomeStatus));
+        assert!(matches!(
+            p.receiver
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .unwrap(),
+            Response::Root(Err(_))
+        ));
     }
 }

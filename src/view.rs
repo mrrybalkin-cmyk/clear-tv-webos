@@ -807,7 +807,7 @@ fn header(
 
 fn service_panel(out: &mut Scene, state: &State, assets: &Assets) {
     let language = state.preferences.language;
-    let panel = Rect::new(560., 300., 800., 420.);
+    let panel = Rect::new(560., 140., 800., 800.);
 
     out.shadow(panel, 28., 36., 14., 0.34);
     out.shape(panel, 28., c(0x171c20, 0.97));
@@ -855,6 +855,24 @@ fn service_panel(out: &mut Scene, state: &State, assets: &Assets) {
         "settings",
         language.t("settings"),
     );
+    for (i, (panel, label)) in [
+        (crate::management::Panel::Diagnostics, "Diagnostics"),
+        (crate::management::Panel::Recovery, "Recovery"),
+        (crate::management::Panel::RootTools, "Root Tools"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        service_action(
+            out,
+            state,
+            assets,
+            Target::Management(crate::management::Command::Open(panel)),
+            Rect::new(608., 520. + i as f32 * 92., 704., 70.),
+            "settings",
+            label,
+        );
+    }
 }
 
 fn service_action(
@@ -1516,6 +1534,16 @@ fn quick_action_button(out: &mut Scene, state: &State, assets: &Assets, index: u
             };
             (tile.title.clone(), tile.icon().to_owned())
         }
+        QuickAction::SmartAction(id) => (
+            state
+                .preferences
+                .smart_actions
+                .iter()
+                .find(|a| a.id == *id)
+                .map_or("Unavailable", |a| a.name.as_str())
+                .to_owned(),
+            "power".to_owned(),
+        ),
         QuickAction::RefreshHome => (language.t("refreshHome").to_owned(), "refresh".to_owned()),
         QuickAction::SystemSettings => (language.t("settings").to_owned(), "settings".to_owned()),
     };
@@ -2303,11 +2331,15 @@ fn settings(out: &mut Scene, state: &State, assets: &Assets) {
 
 fn settings_sidebar(out: &mut Scene, state: &State, assets: &Assets) {
     let language = state.preferences.language;
-    for (index, key) in ["interface", "background", "widgets", "system"]
+    for (index, key) in ["interface", "background", "widgets", "system", "Actions"]
         .into_iter()
         .enumerate()
     {
-        let label = language.t(key);
+        let label = if key == "Actions" {
+            "Actions"
+        } else {
+            language.t(key)
+        };
         let rect = Rect::new(160., 164.8 + index as f32 * 84., 403.2, 72.);
         let focused = state.focus == Target::Sidebar(index);
         out.pill(rect, focused, state.section == index);
@@ -2356,6 +2388,7 @@ fn settings_sidebar(out: &mut Scene, state: &State, assets: &Assets) {
                 Some(Subpage::Date) => language.t("date"),
                 Some(Subpage::Weather) => language.t("weather"),
                 Some(Subpage::Shortcuts) => language.t("shortcuts"),
+                Some(Subpage::Management(panel)) => panel.title(),
                 Some(Subpage::QuickActions) => language.t("quickActions"),
                 Some(Subpage::Inputs) => language.t("inputs"),
                 Some(Subpage::Clock) => language.t("clock"),
@@ -2429,6 +2462,12 @@ fn settings_sidebar(out: &mut Scene, state: &State, assets: &Assets) {
 fn settings_content(out: &mut Scene, state: &State, assets: &Assets) {
     let language = state.preferences.language;
     let s = state.scroll;
+    if matches!(state.subpage, Some(Subpage::Management(_)))
+        || (state.section == crate::state::ACTIONS_SECTION && state.subpage.is_none())
+    {
+        management_settings(out, state, assets);
+        return;
+    }
     if let Some(subpage) = &state.subpage {
         let start = out.draw.len();
         if matches!(
@@ -2516,7 +2555,8 @@ fn settings_content(out: &mut Scene, state: &State, assets: &Assets) {
                     state.preferences.temperature_unit == Unit::Fahrenheit,
                 ),
             ],
-            Subpage::WeatherLocation
+            Subpage::Management(_)
+            | Subpage::WeatherLocation
             | Subpage::Weather
             | Subpage::Shortcuts
             | Subpage::QuickActions
@@ -3169,6 +3209,16 @@ fn quick_action_settings(out: &mut Scene, state: &State, assets: &Assets) {
 
     for (index, action) in candidates.iter().enumerate() {
         let (title, icon) = match action {
+            QuickAction::SmartAction(id) => (
+                state
+                    .preferences
+                    .smart_actions
+                    .iter()
+                    .find(|a| a.id == *id)
+                    .map_or("Unavailable", |a| a.name.as_str())
+                    .to_owned(),
+                "power".to_owned(),
+            ),
             QuickAction::RefreshHome => {
                 (language.t("refreshHome").to_owned(), "refresh".to_owned())
             }
@@ -3736,6 +3786,7 @@ fn keyboard(out: &mut Scene, state: &State, assets: &Assets) {
             TextField::Location => language.t("cityPostcode"),
             TextField::Name => language.t("greetingName"),
             TextField::InputName => language.t("inputName"),
+            TextField::ActionName => "Smart Action name",
             TextField::Apps => language.t("findApp"),
         },
         Rect::new(389., 324., 1000., 44.),
@@ -3835,6 +3886,28 @@ fn full_screen_fill(draw: &Draw) -> bool {
         Draw::RoundedGradient(rect, radius, ..) => whole(rect) && *radius <= 0.,
         _ => false,
     }
+}
+
+fn management_settings(out: &mut Scene, state: &State, assets: &Assets) {
+    out.draw.push(Draw::Clip(Some(state.content_viewport())));
+    for (index, (command, label)) in state.management_rows().into_iter().enumerate() {
+        row(
+            out,
+            state,
+            assets,
+            Row {
+                target: Target::Management(command),
+                rect: Rect::new(640., 164.8 + index as f32 * 84. - state.scroll, 1120., 72.),
+                title: &label,
+                icon: None,
+                value: None,
+                description: None,
+                selected: false,
+                chevron: false,
+            },
+        );
+    }
+    out.draw.push(Draw::Clip(None));
 }
 
 #[cfg(test)]

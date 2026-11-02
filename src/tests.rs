@@ -465,21 +465,23 @@ fn quick_actions_round_trip_deduplicate_and_respect_limit() {
         std::env::temp_dir().join(format!("luma-quick-actions-test-{}", std::process::id()));
     let path = directory.join("preferences.json");
 
-    let mut preferences = Preferences::default();
-    preferences.quick_actions = vec![
-        QuickAction::RefreshHome,
-        QuickAction::RefreshHome,
-        QuickAction::SystemSettings,
-        QuickAction::App("com.test.app0".into()),
-        QuickAction::App("com.test.app1".into()),
-        QuickAction::App("com.test.app2".into()),
-        QuickAction::App("com.test.app3".into()),
-        QuickAction::App("com.test.app4".into()),
-        QuickAction::App("com.test.app5".into()),
-        QuickAction::App("com.test.app6".into()),
-        QuickAction::App("com.test.app7".into()),
-        QuickAction::App("com.test.app8".into()),
-    ];
+    let mut preferences = Preferences {
+        quick_actions: vec![
+            QuickAction::RefreshHome,
+            QuickAction::RefreshHome,
+            QuickAction::SystemSettings,
+            QuickAction::App("com.test.app0".into()),
+            QuickAction::App("com.test.app1".into()),
+            QuickAction::App("com.test.app2".into()),
+            QuickAction::App("com.test.app3".into()),
+            QuickAction::App("com.test.app4".into()),
+            QuickAction::App("com.test.app5".into()),
+            QuickAction::App("com.test.app6".into()),
+            QuickAction::App("com.test.app7".into()),
+            QuickAction::App("com.test.app8".into()),
+        ],
+        ..Default::default()
+    };
 
     preferences.sanitize();
 
@@ -1084,6 +1086,8 @@ fn system_category_owns_refresh_and_quit_and_restores_sidebar_focus() {
     assert_eq!(state.activate(), vec![Effect::Quit]);
     state.back();
     assert_eq!(state.focus, Target::Sidebar(crate::state::SYSTEM_SECTION));
+    state.direction(Direction::Down, &controls(&state));
+    assert_eq!(state.focus, Target::Sidebar(crate::state::ACTIONS_SECTION));
     state.direction(Direction::Down, &controls(&state));
     assert_eq!(state.focus, Target::Sidebar(0));
     assert_eq!(state.section, 0);
@@ -2508,7 +2512,7 @@ fn widgets_group_existing_settings_and_restore_each_parent_without_changing_pref
     }]);
     let saved = serde_json::to_value(&state.preferences).unwrap();
     state.open(2);
-    assert_eq!(SECTION_COUNT, 4);
+    assert_eq!(SECTION_COUNT, 5);
     assert!(
         !controls(&state)
             .iter()
@@ -2600,7 +2604,7 @@ fn widgets_are_localized_without_legacy_sidebar_entries() {
                 .iter()
                 .filter(|c| matches!(c.target, Target::Sidebar(_)))
                 .count(),
-            4
+            5
         );
         assert_eq!(
             page.controls
