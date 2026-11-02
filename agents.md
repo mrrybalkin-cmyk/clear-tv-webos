@@ -113,3 +113,15 @@ can publish after the main-branch CI build passes. Ordinary PRs, other merges an
 still build/check/package but do not publish. See `development.md#releases` for setup and retries.
 Only create commits or PRs when explicitly requested. For PR descriptions follow the global
 `commands/pr.md` format instructions.
+
+## Clear TV WebOS fork
+
+This repository is also developed as the Clear TV WebOS fork.
+
+Before Clear TV specific work, read:
+
+`docs/CLEAR_TV_PROJECT.md`
+
+Its hardware and safety rules supplement this file.
+
+Upstream Luma architecture and safety constraints remain authoritative.
